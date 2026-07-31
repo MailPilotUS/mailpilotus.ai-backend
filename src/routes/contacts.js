@@ -21,5 +21,3 @@ router.post('/', async (req, res) => {
 module.exports = router;
 
 
-
-Let me know once done, and we'll move to file 4 of 7 (inbound.js — the one that handles incoming email).
