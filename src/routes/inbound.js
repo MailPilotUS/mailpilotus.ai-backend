@@ -28,7 +28,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
     const toAddress = (req.body.to || '').match(/[\w.+-]+@fly\.mailpilotus\.ai/i)?.[0];
     if (!toAddress) return res.status(400).send('No recognizable MailPilotus address in To');
 
-    const user = Users.findByForwardingAddress(toAddress.toLowerCase());
+    const user = await Users.findByForwardingAddress(toAddress.toLowerCase());
     if (!user) return res.status(404).send('Unknown MailPilotus address');
 
     const rawEmail = req.body.email; // SendGrid provides the full raw MIME in `email`
@@ -39,7 +39,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
     const fromName = parsed?.from?.value?.[0]?.name;
     const snippet = (parsed?.text || req.body.text || '').slice(0, 160);
 
-    Tasks.create({
+    await Tasks.create({
       ownerId: user.id,
       fromAddress,
       fromName,
