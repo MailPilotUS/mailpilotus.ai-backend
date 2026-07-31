@@ -115,13 +115,6 @@ const Tasks = {
 
 module.exports = { Users, Contacts, Tasks };
 
-Steps to apply this file:
 
-Go to https://github.com/MailPilotUS/mailpilotus.ai-backend
-Click into src folder, then click on store.js
-Click the pencil (edit) icon in the top right of the file view
-Select all existing text in the editor (click inside it, Ctrl+A) and delete it
-Paste the code block above in its place
-Scroll down, and where it says "Commit changes," just click the green "Commit changes" button (default options are fine)
 
 Let me know once that's done — then we'll move to file 2 of 7 (auth.js, a small tweak).
