@@ -6,34 +6,35 @@ const router = express.Router();
 router.use(requireAuth);
 
 // GET /v1/tasks?status=follow_up|assigned|done
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const status = req.query.status || 'follow_up';
-  const tasks = Tasks.listByOwnerAndStatus(req.userId, status).map(Tasks.serialize);
-  res.json(tasks);
+  const tasks = await Tasks.listByOwnerAndStatus(req.userId, status);
+  const serialized = await Promise.all(tasks.map(Tasks.serialize));
+  res.json(serialized);
 });
 
-router.post('/:id/assign', (req, res) => {
-  const task = Tasks.findById(req.params.id);
+router.post('/:id/assign', async (req, res) => {
+  const task = await Tasks.findById(req.params.id);
   if (!task || task.ownerId !== req.userId) return res.status(404).json({ error: 'Not found' });
-  const contact = Contacts.findById(req.body.contactId);
+  const contact = await Contacts.findById(req.body.contactId);
   if (!contact || contact.ownerId !== req.userId)
     return res.status(400).json({ error: 'Unknown contact' });
-  const updated = Tasks.assign(task.id, contact.id);
-  res.json(Tasks.serialize(updated));
+  const updated = await Tasks.assign(task.id, contact.id);
+  res.json(await Tasks.serialize(updated));
 });
 
-router.post('/:id/unassign', (req, res) => {
-  const task = Tasks.findById(req.params.id);
+router.post('/:id/unassign', async (req, res) => {
+  const task = await Tasks.findById(req.params.id);
   if (!task || task.ownerId !== req.userId) return res.status(404).json({ error: 'Not found' });
-  const updated = Tasks.unassign(task.id);
-  res.json(Tasks.serialize(updated));
+  const updated = await Tasks.unassign(task.id);
+  res.json(await Tasks.serialize(updated));
 });
 
-router.post('/:id/complete', (req, res) => {
-  const task = Tasks.findById(req.params.id);
+router.post('/:id/complete', async (req, res) => {
+  const task = await Tasks.findById(req.params.id);
   if (!task || task.ownerId !== req.userId) return res.status(404).json({ error: 'Not found' });
-  const updated = Tasks.complete(task.id);
-  res.json(Tasks.serialize(updated));
+  const updated = await Tasks.complete(task.id);
+  res.json(await Tasks.serialize(updated));
 });
 
 module.exports = router;
