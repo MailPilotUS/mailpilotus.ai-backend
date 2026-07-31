@@ -23,7 +23,7 @@ const REVENUECAT_WEBHOOK_SECRET = process.env.REVENUECAT_WEBHOOK_SECRET || '';
  *   BILLING_ISSUE                  -> leave status, but flag for a
  *                                     "update payment method" prompt (TODO)
  */
-router.post('/revenuecat', express.json(), (req, res) => {
+router.post('/revenuecat', express.json(), async (req, res) => {
   const auth = req.headers.authorization || '';
   if (REVENUECAT_WEBHOOK_SECRET && auth !== `Bearer ${REVENUECAT_WEBHOOK_SECRET}`) {
     return res.status(401).send('Unauthorized');
@@ -33,12 +33,12 @@ router.post('/revenuecat', express.json(), (req, res) => {
   if (!event) return res.status(400).send('Missing event');
 
   const appUserId = event.app_user_id;
-  const user = Users.findById(appUserId);
+  const user = await Users.findById(appUserId);
   if (!user) return res.status(200).send('Unknown user, ignoring'); // ack anyway
 
   switch (event.type) {
     case 'TRIAL_STARTED':
-      Users.updateSubscription(user.id, {
+      await Users.updateSubscription(user.id, {
         status: 'trialing',
         trialEndsAt: event.expiration_at_ms ? new Date(event.expiration_at_ms).toISOString() : null,
       });
@@ -46,10 +46,10 @@ router.post('/revenuecat', express.json(), (req, res) => {
     case 'INITIAL_PURCHASE':
     case 'RENEWAL':
     case 'UNCANCELLATION':
-      Users.updateSubscription(user.id, { status: 'active' });
+      await Users.updateSubscription(user.id, { status: 'active' });
       break;
     case 'EXPIRATION':
-      Users.updateSubscription(user.id, { status: 'expired' });
+      await Users.updateSubscription(user.id, { status: 'expired' });
       break;
     // CANCELLATION and BILLING_ISSUE intentionally don't downgrade access
     // immediately — the user keeps access until the paid period actually
