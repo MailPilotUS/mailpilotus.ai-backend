@@ -20,11 +20,6 @@ router.post('/', async (req, res) => {
 
 module.exports = router;
 
-Steps:
 
-In the GitHub repo, go to src/routes/contacts.js
-Click the pencil (edit) icon
-Select all (Ctrl+A), delete, paste the code above
-Scroll down, click "Commit changes"
 
 Let me know once done, and we'll move to file 4 of 7 (inbound.js — the one that handles incoming email).
