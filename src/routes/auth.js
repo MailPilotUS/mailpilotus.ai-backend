@@ -175,13 +175,5 @@ function publicUser(user) {
 module.exports = router;
 module.exports.publicUser = publicUser;
 
-Steps:
-
-In the same GitHub repo, go to src/routes/auth.js
-Click the pencil (edit) icon
-Select all (Ctrl+A), delete, paste the code above
-Scroll down, click "Commit changes"
-
-Let me know once done, and we'll move to file 3 of 7 (contacts.js).
 
 
