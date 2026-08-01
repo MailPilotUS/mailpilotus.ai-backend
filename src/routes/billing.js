@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/auth'); // adjust path if your au
 const { Users } = require('../store');
 
 
+
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const WEB_DOMAIN = process.env.WEB_DOMAIN || 'https://mailpilotus.com';
 
