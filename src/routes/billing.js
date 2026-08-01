@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Stripe = require('stripe');
 const { requireAuth } = require('../middleware/auth'); // adjust path if your auth middleware lives elsewhere
+const { Users } = require('../store');
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const WEB_DOMAIN = process.env.WEB_DOMAIN || 'https://mailpilotus.com';
@@ -9,8 +10,10 @@ const WEB_DOMAIN = process.env.WEB_DOMAIN || 'https://mailpilotus.com';
 router.post('/create-checkout-session', requireAuth, async (req, res) => {
   try {
     const { priceId } = req.body;
-    const user = req.user; // set by requireAuth middleware
-
+   const user = await Users.findById(req.userId);
+if (!user) {
+  return res.status(401).json({ error: 'User not found' });
+}
     if (!priceId) {
       return res.status(400).json({ error: 'priceId is required' });
     }
