@@ -1,50 +1,116 @@
-const express = require('express');
-const router = express.Router();
-const Stripe = require('stripe');
-const { Users } = require('../store'); // matches how store.js exports Users
+/**
+ * Postgres-backed data store via Prisma Client.
+ * Replaces the in-memory store so data survives Render restarts.
+ */
+const { PrismaClient } = require('@prisma/client');
+const { nanoid } = require('nanoid');
 
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const prisma = new PrismaClient();
 
-// NOTE: this route needs the raw body, not JSON-parsed — see index.js wiring instructions
-router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
+function makeForwardingAddress(email) {
+  const local = email.split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const suffix = nanoid(4).toLowerCase();
+  return `${local}.${suffix}@fly.mailpilotus.ai`;
+}
 
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-  } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
+const Users = {
+  async create({ email, passwordHash }) {
+    const id = nanoid();
+    const forwardingAddress = makeForwardingAddress(email);
+    return prisma.user.create({
+      data: {
+        id,
+        email,
+        passwordHash,
+        forwardingAddress,
+        revenueCatAppUserId: id,
+        subscriptionStatus: 'none',
+      },
+    });
+  },
+  async findByEmail(email) {
+    return prisma.user.findUnique({ where: { email } });
+  },
+  async findById(id) {
+    return prisma.user.findUnique({ where: { id } });
+  },
+  async findByForwardingAddress(address) {
+    return prisma.user.findUnique({ where: { forwardingAddress: address.toLowerCase() } });
+  },
+  async updateSubscription(id, { status, trialEndsAt }) {
+    return prisma.user.update({
+      where: { id },
+      data: {
+        subscriptionStatus: status,
+        ...(trialEndsAt !== undefined
+          ? { trialEndsAt: trialEndsAt ? new Date(trialEndsAt) : null }
+          : {}),
+      },
+    });
+  },
+};
 
-  try {
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const userId = session.client_reference_id;
+const Contacts = {
+  async upsert({ ownerId, deviceContactId, name, email, phone }) {
+    return prisma.contact.upsert({
+      where: { ownerId_deviceContactId: { ownerId, deviceContactId } },
+      update: { name, email, phone },
+      create: { ownerId, deviceContactId, name, email, phone },
+    });
+  },
+  async findById(id) {
+    return prisma.contact.findUnique({ where: { id } });
+  },
+};
 
-      if (userId) {
-        await Users.updateSubscription(userId, { status: 'active' });
-        console.log(`Subscription activated for user ${userId}`);
-      } else {
-        console.warn('checkout.session.completed received with no client_reference_id');
-      }
-    }
+const Tasks = {
+  async create({ ownerId, fromAddress, fromName, subject, snippet }) {
+    return prisma.task.create({
+      data: { ownerId, fromAddress, fromName, subject, snippet, status: 'follow_up' },
+    });
+  },
+  async listByOwnerAndStatus(ownerId, status) {
+    return prisma.task.findMany({
+      where: { ownerId, status },
+      orderBy: { receivedAt: 'desc' },
+    });
+  },
+  async findById(id) {
+    return prisma.task.findUnique({ where: { id } });
+  },
+  async assign(id, contactId) {
+    return prisma.task.update({
+      where: { id },
+      data: { status: 'assigned', assignedToId: contactId, assignedAt: new Date() },
+    });
+  },
+  async unassign(id) {
+    return prisma.task.update({
+      where: { id },
+      data: { status: 'follow_up', assignedToId: null, assignedAt: null },
+    });
+  },
+  async complete(id) {
+    return prisma.task.update({
+      where: { id },
+      data: { status: 'done', completedAt: new Date() },
+    });
+  },
+  async serialize(task) {
+    const contact = task.assignedToId ? await Contacts.findById(task.assignedToId) : null;
+    return {
+      id: task.id,
+      fromAddress: task.fromAddress,
+      fromName: task.fromName,
+      subject: task.subject,
+      snippet: task.snippet,
+      receivedAt: task.receivedAt,
+      status: task.status,
+      assignedTo: contact ? { id: contact.id, name: contact.name, email: contact.email } : null,
+      assignedAt: task.assignedAt,
+      assignedByMe: true,
+    };
+  },
+};
 
-    if (event.type === 'customer.subscription.deleted') {
-      const subscription = event.data.object;
-      const userId = subscription.metadata?.userId;
-      if (userId) {
-        await Users.updateSubscription(userId, { status: 'canceled' });
-        console.log(`Subscription canceled for user ${userId}`);
-      }
-    }
-
-    res.json({ received: true });
-  } catch (err) {
-    console.error('Error handling Stripe webhook event:', err);
-    res.status(500).json({ error: 'Webhook handler failed' });
-  }
-});
-
-module.exports = router;
+module.exports = { Users, Contacts, Tasks };
