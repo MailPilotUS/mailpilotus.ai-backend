@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Stripe = require('stripe');
-const { store } = require('../store'); // adjust if your store export is named differently
+const { Users } = require('../store');
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -21,13 +21,13 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
   try {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
-      const userId = session.client_reference_id || session.subscription_data?.metadata?.userId;
+      const userId = session.client_reference_id;
 
       if (userId) {
-        await store.updateSubscription(userId, { status: 'active' });
+        await Users.updateSubscription(userId, { status: 'active' });
         console.log(`Subscription activated for user ${userId}`);
       } else {
-        console.warn('checkout.session.completed received with no userId on session');
+        console.warn('checkout.session.completed received with no client_reference_id');
       }
     }
 
@@ -35,7 +35,7 @@ router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async 
       const subscription = event.data.object;
       const userId = subscription.metadata?.userId;
       if (userId) {
-        await store.updateSubscription(userId, { status: 'canceled' });
+        await Users.updateSubscription(userId, { status: 'canceled' });
         console.log(`Subscription canceled for user ${userId}`);
       }
     }
