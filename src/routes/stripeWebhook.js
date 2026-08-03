@@ -9,9 +9,9 @@ const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 // NOTE: this route needs the raw body, not JSON-parsed — see index.js wiring instructions
 router.post('/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
-  let event;
-
-  try {
+let event;
+console.log('DEBUG webhook body type:', typeof req.body, 'isBuffer:', Buffer.isBuffer(req.body), 'length:', req.body?.length, 'sig present:', !!sig);
+try {
     event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
   } catch (err) {
     console.error('Webhook signature verification failed:', err.message);
