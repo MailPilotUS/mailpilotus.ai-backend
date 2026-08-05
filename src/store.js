@@ -4,15 +4,12 @@
  */
 const { PrismaClient } = require('@prisma/client');
 const { nanoid } = require('nanoid');
-
 const prisma = new PrismaClient();
-
 function makeForwardingAddress(email) {
   const local = email.split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase();
   const suffix = nanoid(4).toLowerCase();
   return `${local}.${suffix}@fly.mailpilotus.ai`;
 }
-
 const Users = {
   async create({ email, passwordHash }) {
     const id = nanoid();
@@ -49,7 +46,6 @@ const Users = {
     });
   },
 };
-
 const Contacts = {
   async upsert({ ownerId, deviceContactId, name, email, phone }) {
     return prisma.contact.upsert({
@@ -62,11 +58,10 @@ const Contacts = {
     return prisma.contact.findUnique({ where: { id } });
   },
 };
-
 const Tasks = {
-  async create({ ownerId, fromAddress, fromName, subject, snippet }) {
+  async create({ ownerId, fromAddress, fromName, forwarderAddress, subject, snippet }) {
     return prisma.task.create({
-      data: { ownerId, fromAddress, fromName, subject, snippet, status: 'follow_up' },
+      data: { ownerId, fromAddress, fromName, forwarderAddress, subject, snippet, status: 'follow_up' },
     });
   },
   async listByOwnerAndStatus(ownerId, status) {
@@ -102,6 +97,7 @@ const Tasks = {
       id: task.id,
       fromAddress: task.fromAddress,
       fromName: task.fromName,
+      forwarderAddress: task.forwarderAddress,
       subject: task.subject,
       snippet: task.snippet,
       receivedAt: task.receivedAt,
@@ -112,5 +108,4 @@ const Tasks = {
     };
   },
 };
-
 module.exports = { Users, Contacts, Tasks };
