@@ -113,6 +113,12 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
 
     const forwarded = extractOriginalSender(bodyText);
 
+    // The outer envelope's From is always the account holder's own address
+    // (they're the one who forwarded this email to their MailPilotUS
+    // address) - captured separately from the true original sender so
+    // "View Original" can deep-link back into the right webmail provider.
+    const forwarderAddress = parsed?.from?.value?.[0]?.address || req.body.from || undefined;
+
     const rawSubject =
       forwarded?.origSubject || parsed?.subject || req.body.subject || '(no subject)';
     const subject = rawSubject.replace(/^(fwd?:\s*)+/i, ''); // strip leading "Fwd:" noise
@@ -128,6 +134,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       ownerId: user.id,
       fromAddress,
       fromName,
+      forwarderAddress,
       subject,
       snippet,
     });
