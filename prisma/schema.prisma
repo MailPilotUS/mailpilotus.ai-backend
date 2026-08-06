@@ -16,6 +16,9 @@ model User {
   subscriptionStatus String   @default("none") // none | trialing | active | expired
   trialEndsAt        DateTime?
   createdAt          DateTime @default(now())
+  googleAccessToken  String? // Gmail contacts OAuth - short-lived, auto-refreshed
+  googleRefreshToken String? // Gmail contacts OAuth - long-lived, only set on first consent
+  googleTokenExpiry  DateTime?
   tasks    Task[]
   contacts Contact[]
 }
@@ -23,7 +26,7 @@ model Contact {
   id              String  @id @default(cuid())
   ownerId         String
   owner           User    @relation(fields: [ownerId], references: [id])
-  deviceContactId String // local id from the phone's contact list, for de-dupe
+  deviceContactId String // local id from the phone's contacts OR the Google People API resourceName, for de-dupe
   name            String
   email           String?
   phone           String?
