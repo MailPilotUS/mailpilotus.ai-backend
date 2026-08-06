@@ -1,15 +1,12 @@
 // MailPilotus data model.
 // Swap the datasource to Postgres in production (see /docs/deployment-guide.docx).
-
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 model User {
   id                 String   @id @default(cuid())
   email              String   @unique
@@ -19,11 +16,9 @@ model User {
   subscriptionStatus String   @default("none") // none | trialing | active | expired
   trialEndsAt        DateTime?
   createdAt          DateTime @default(now())
-
   tasks    Task[]
   contacts Contact[]
 }
-
 model Contact {
   id              String  @id @default(cuid())
   ownerId         String
@@ -33,25 +28,23 @@ model Contact {
   email           String?
   phone           String?
   createdAt       DateTime @default(now())
-
   assignedTasks Task[]
-
   @@unique([ownerId, deviceContactId])
 }
-
 model Task {
-  id           String    @id @default(cuid())
-  ownerId      String
-  owner        User      @relation(fields: [ownerId], references: [id])
-  fromAddress  String
-  fromName     String?
-  subject      String
-  snippet      String?
-  rawEmailUrl  String? // pointer to stored raw MIME, e.g. S3 key
-  status       String    @default("follow_up") // follow_up | assigned | done
-  assignedToId String?
-  assignedTo   Contact?  @relation(fields: [assignedToId], references: [id])
-  assignedAt   DateTime?
-  receivedAt   DateTime  @default(now())
-  completedAt  DateTime?
+  id               String    @id @default(cuid())
+  ownerId          String
+  owner            User      @relation(fields: [ownerId], references: [id])
+  fromAddress      String
+  fromName         String?
+  forwarderAddress String? // the account holder's own address (who forwarded this email), used for "View Original" deep links
+  subject          String
+  snippet          String?
+  rawEmailUrl      String? // pointer to stored raw MIME, e.g. S3 key
+  status           String    @default("follow_up") // follow_up | assigned | done
+  assignedToId     String?
+  assignedTo       Contact?  @relation(fields: [assignedToId], references: [id])
+  assignedAt       DateTime?
+  receivedAt       DateTime  @default(now())
+  completedAt      DateTime?
 }
