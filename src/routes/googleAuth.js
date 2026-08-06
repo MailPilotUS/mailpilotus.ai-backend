@@ -39,7 +39,7 @@ router.get('/connect', (req, res) => {
   let userId;
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    userId = payload.userId;
+    userId = payload.sub;
   } catch (e) {
     return res.status(401).send('Invalid or expired token');
   }
