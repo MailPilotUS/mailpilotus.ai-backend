@@ -45,6 +45,21 @@ const Users = {
       },
     });
   },
+  // Saves Google OAuth tokens after a successful /auth/google/callback, and
+  // again whenever googleapis silently refreshes an expired access token
+  // (see the 'tokens' event listener in routes/contacts.js). refreshToken
+  // is only ever sent by Google on first-ever consent, so we don't
+  // overwrite the stored one with undefined on later refreshes.
+  async saveGoogleTokens(id, { googleAccessToken, googleRefreshToken, googleTokenExpiry }) {
+    return prisma.user.update({
+      where: { id },
+      data: {
+        googleAccessToken,
+        ...(googleRefreshToken ? { googleRefreshToken } : {}),
+        googleTokenExpiry,
+      },
+    });
+  },
 };
 const Contacts = {
   async upsert({ ownerId, deviceContactId, name, email, phone }) {
