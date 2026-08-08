@@ -60,6 +60,28 @@ const Users = {
       },
     });
   },
+  // Password reset flow: setResetToken stores a one-time token + expiry
+  // when the user requests a reset email; findByResetToken looks a user
+  // up by that token (only returns a match if it hasn't expired yet);
+  // resetPassword sets the new password hash and clears the token so it
+  // can't be reused.
+  async setResetToken(id, { resetToken, resetTokenExpiry }) {
+    return prisma.user.update({
+      where: { id },
+      data: { resetToken, resetTokenExpiry },
+    });
+  },
+  async findByResetToken(token) {
+    return prisma.user.findFirst({
+      where: { resetToken: token, resetTokenExpiry: { gt: new Date() } },
+    });
+  },
+  async resetPassword(id, passwordHash) {
+    return prisma.user.update({
+      where: { id },
+      data: { passwordHash, resetToken: null, resetTokenExpiry: null },
+    });
+  },
 };
 const Contacts = {
   async upsert({ ownerId, deviceContactId, name, email, phone }) {
