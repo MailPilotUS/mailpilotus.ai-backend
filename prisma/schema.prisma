@@ -28,7 +28,7 @@ model Contact {
   id              String  @id @default(cuid())
   ownerId         String
   owner           User    @relation(fields: [ownerId], references: [id])
-  deviceContactId String // local id from the phone's contacts OR the Google People API resourceName, for de-dupe
+  deviceContactId String? // legacy: local device-contact id or Google People API resourceName, for de-dupe on contacts synced from an external source. Manually-entered contacts leave this null.
   name            String
   email           String?
   phone           String?
