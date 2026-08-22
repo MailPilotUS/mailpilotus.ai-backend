@@ -1,9 +1,12 @@
 const express = require('express');
+const sgMail = require('@sendgrid/mail');
 const { Tasks, Contacts } = require('../store');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // GET /v1/tasks?status=follow_up|assigned|done
 router.get('/', async (req, res) => {
@@ -20,6 +23,33 @@ router.post('/:id/assign', async (req, res) => {
   if (!contact || contact.ownerId !== req.userId)
     return res.status(400).json({ error: 'Unknown contact' });
   const updated = await Tasks.assign(task.id, contact.id);
+
+  // Actually forward the email to the assigned contact, plus a short
+  // heads-up note above the forwarded content. Only sent if the contact
+  // has an email on file (phone-only contacts are skipped for now).
+  // Never fails the assign request itself if sending errors out.
+  if (contact.email) {
+    const originalSenderLabel = task.fromName ? `${task.fromName} <${task.fromAddress}>` : task.fromAddress;
+    try {
+      await sgMail.send({
+        to: contact.email,
+        from: 'support@mailpilotus.com',
+        replyTo: task.forwarderAddress || undefined,
+        subject: `Fwd: ${task.subject} (from ${task.fromName || task.fromAddress})`,
+        html: `
+          <p>Hi ${contact.name.split(' ')[0]},</p>
+          <p>This email was assigned to you via MailPilotUS. Please follow up.</p>
+          <hr />
+          <p><strong>From:</strong> ${originalSenderLabel}<br/>
+          <strong>Subject:</strong> ${task.subject}</p>
+          <div>${(task.body || task.snippet || '').replace(/\n/g, '<br/>')}</div>
+        `,
+      });
+    } catch (err) {
+      console.error('Failed to send assign notification email:', err.message);
+    }
+  }
+
   res.json(await Tasks.serialize(updated));
 });
 
