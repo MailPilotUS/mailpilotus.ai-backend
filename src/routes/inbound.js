@@ -127,8 +127,9 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       forwarded?.fromAddress || parsed?.from?.value?.[0]?.address || req.body.from || 'unknown@sender';
     const fromName = forwarded?.fromName || parsed?.from?.value?.[0]?.name;
 
-    const snippetSource = forwarded?.bodyAfterHeader || bodyText;
-    const snippet = snippetSource.slice(0, 160);
+    const bodySource = forwarded?.bodyAfterHeader || bodyText;
+    const snippet = bodySource.slice(0, 160);
+    const body = bodySource;
 
     await Tasks.create({
       ownerId: user.id,
@@ -137,6 +138,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       forwarderAddress,
       subject,
       snippet,
+      body,
     });
 
     // TODO production: also persist the raw MIME to object storage (S3) and
