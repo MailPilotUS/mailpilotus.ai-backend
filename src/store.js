@@ -109,9 +109,18 @@ const Contacts = {
   },
 };
 const Tasks = {
-  async create({ ownerId, fromAddress, fromName, forwarderAddress, subject, snippet }) {
+  async create({ ownerId, fromAddress, fromName, forwarderAddress, subject, snippet, body }) {
     return prisma.task.create({
-      data: { ownerId, fromAddress, fromName, forwarderAddress, subject, snippet, status: 'follow_up' },
+      data: {
+        ownerId,
+        fromAddress,
+        fromName,
+        forwarderAddress,
+        subject,
+        snippet,
+        body,
+        status: 'follow_up',
+      },
     });
   },
   async listByOwnerAndStatus(ownerId, status) {
