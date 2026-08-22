@@ -3,7 +3,7 @@ const multer = require('multer');
 const { simpleParser } = require('mailparser');
 const { Users, Tasks } = require('../store');
 const router = express.Router();
-const upload = multer();
+const upload = multer({ limits: { fieldSize: 25 * 1024 * 1024 } }); // allow forwarded emails with attachments up to ~25MB
 
 /**
  * Inbound email webhook.
