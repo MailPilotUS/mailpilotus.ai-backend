@@ -138,6 +138,12 @@ const Tasks = {
       data: { status: 'done', completedAt: new Date() },
     });
   },
+  async setDueDate(id, dueDate) {
+    return prisma.task.update({
+      where: { id },
+      data: { dueDate: dueDate ? new Date(dueDate) : null },
+    });
+  },
   async serialize(task) {
     const contact = task.assignedToId ? await Contacts.findById(task.assignedToId) : null;
     return {
@@ -152,6 +158,7 @@ const Tasks = {
       assignedTo: contact ? { id: contact.id, name: contact.name, email: contact.email } : null,
       assignedAt: task.assignedAt,
       assignedByMe: true,
+      dueDate: task.dueDate,
     };
   },
 };
