@@ -45,11 +45,6 @@ const Users = {
       },
     });
   },
-  // Saves Google OAuth tokens after a successful /auth/google/callback, and
-  // again whenever googleapis silently refreshes an expired access token
-  // (see the 'tokens' event listener in routes/contacts.js). refreshToken
-  // is only ever sent by Google on first-ever consent, so we don't
-  // overwrite the stored one with undefined on later refreshes.
   async saveGoogleTokens(id, { googleAccessToken, googleRefreshToken, googleTokenExpiry }) {
     return prisma.user.update({
       where: { id },
@@ -60,11 +55,6 @@ const Users = {
       },
     });
   },
-  // Password reset flow: setResetToken stores a one-time token + expiry
-  // when the user requests a reset email; findByResetToken looks a user
-  // up by that token (only returns a match if it hasn't expired yet);
-  // resetPassword sets the new password hash and clears the token so it
-  // can't be reused.
   async setResetToken(id, { resetToken, resetTokenExpiry }) {
     return prisma.user.update({
       where: { id },
@@ -91,8 +81,6 @@ const Contacts = {
       create: { ownerId, deviceContactId, name, email, phone },
     });
   },
-  // Manually-entered contacts (any email provider, not just Gmail) - no
-  // deviceContactId involved, just a straightforward create.
   async create({ ownerId, name, email, phone }) {
     return prisma.contact.create({
       data: { ownerId, name, email, phone },
@@ -167,4 +155,21 @@ const Tasks = {
     };
   },
 };
-module.exports = { Users, Contacts, Tasks };
+const PushTokens = {
+  // Upserts on the token itself (not ownerId) so re-installs, account
+  // switches on the same device, etc. don't create duplicate rows.
+  async upsert({ ownerId, token, platform }) {
+    return prisma.pushToken.upsert({
+      where: { token },
+      update: { ownerId, platform },
+      create: { ownerId, token, platform },
+    });
+  },
+  async findAllByOwner(ownerId) {
+    return prisma.pushToken.findMany({ where: { ownerId } });
+  },
+  async remove(token) {
+    return prisma.pushToken.deleteMany({ where: { token } });
+  },
+};
+module.exports = { Users, Contacts, Tasks, PushTokens };
