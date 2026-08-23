@@ -1,4 +1,3 @@
-
 // MailPilotus data model.
 // Swap the datasource to Postgres in production (see /docs/deployment-guide.docx).
 generator client {
@@ -22,8 +21,9 @@ resetTokenExpiry DateTime?
   googleAccessToken  String? // Gmail contacts OAuth - short-lived, auto-refreshed
   googleRefreshToken String? // Gmail contacts OAuth - long-lived, only set on first consent
   googleTokenExpiry  DateTime?
-  tasks    Task[]
-  contacts Contact[]
+  tasks      Task[]
+  contacts   Contact[]
+  pushTokens PushToken[]
 }
 model Contact {
   id              String  @id @default(cuid())
@@ -54,4 +54,12 @@ model Task {
   assignedAt       DateTime?
   receivedAt       DateTime  @default(now())
   completedAt      DateTime?
+}
+model PushToken {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  token     String   @unique // Expo push token, e.g. ExponentPushToken[xxxxx]
+  platform  String   // ios | android | web
+  createdAt DateTime @default(now())
 }
