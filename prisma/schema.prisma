@@ -54,6 +54,7 @@ model Task {
   assignedAt       DateTime?
   receivedAt       DateTime  @default(now())
   completedAt      DateTime?
+dueDate       DateTime?
 }
 model PushToken {
   id        String   @id @default(cuid())
