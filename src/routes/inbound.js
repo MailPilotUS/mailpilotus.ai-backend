@@ -12,7 +12,7 @@ const upload = multer({
 });
 
 /**
- * Extract the original sender information from a forwarded email.
+ * Extract original sender information from a forwarded email.
  */
 function extractOriginalSender(text) {
   if (!text) return null;
@@ -97,170 +97,196 @@ function extractOriginalSender(text) {
 }
 
 /**
- * SendGrid inbound email webhook.
+ * SendGrid inbound webhook.
  */
-router.post(
-  '/sendgrid',
-  upload.any(),
-  async (req, res) => {
-    try {
-      /*
-       * TEMPORARY DIAGNOSTIC LOGGING
-       *
-       * This tells us whether SendGrid is sending the iPhone
-       * screenshot as an attachment.
-       *
-       * We intentionally log metadata only — not the actual
-       * email body or attachment contents.
-       */
-      console.log('=== INBOUND SENDGRID MESSAGE ===');
+router.post('/sendgrid', upload.any(), async (req, res) => {
+  try {
+    console.log('=== INBOUND SENDGRID MESSAGE ===');
 
-      console.log(
-        'Body fields:',
-        Object.keys(req.body || {})
-      );
+    console.log(
+      'Body fields:',
+      Object.keys(req.body || {})
+    );
 
-      console.log(
-        'Uploaded files:',
-        (req.files || []).map((file) => ({
-          fieldname: file.fieldname,
-          originalname: file.originalname,
-          mimetype: file.mimetype,
-          size: file.size,
-        }))
-      );
+    console.log(
+      'Uploaded files:',
+      (req.files || []).map((file) => ({
+        fieldname: file.fieldname,
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+      }))
+    );
 
-      /*
-       * Determine which MailPilotUs forwarding address
-       * received the message.
-       */
-      const toAddress = (req.body.to || '').match(
-        /[\w.+-]+@fly\.mailpilotus\.ai/i
-      )?.[0];
+    /*
+     * Find the MailPilotUs forwarding address.
+     */
+    const toAddress = (req.body.to || '').match(
+      /[\w.+-]+@fly\.mailpilotus\.ai/i
+    )?.[0];
 
-      if (!toAddress) {
-        return res
-          .status(400)
-          .send(
-            'No recognizable MailPilotus address in To'
-          );
-      }
-
-      /*
-       * Find the MailPilotUs user who owns this forwarding
-       * address.
-       */
-      const user =
-        await Users.findByForwardingAddress(
-          toAddress.toLowerCase()
-        );
-
-      if (!user) {
-        return res
-          .status(404)
-          .send('Unknown MailPilotus address');
-      }
-
-      /*
-       * SendGrid may provide the complete raw MIME email
-       * in the "email" field.
-       */
-      const rawEmail = req.body.email;
-
-      const parsed = rawEmail
-        ? await simpleParser(rawEmail)
-        : null;
-
-      const bodyText =
-        parsed?.text ||
-        req.body.text ||
-        '';
-
-      /*
-       * Try to identify the original sender information
-       * inside the forwarded message.
-       */
-      const forwarded =
-        extractOriginalSender(bodyText);
-
-      /*
-       * The outer From address belongs to the MailPilotUs
-       * user who forwarded the message.
-       */
-      const forwarderAddress =
-        parsed?.from?.value?.[0]?.address ||
-        req.body.from ||
-        undefined;
-
-      /*
-       * Determine the subject.
-       */
-      const rawSubject =
-        forwarded?.origSubject ||
-        parsed?.subject ||
-        req.body.subject ||
-        '(no subject)';
-
-      const subject = rawSubject.replace(
-        /^(fwd?:\s*)+/i,
-        ''
-      );
-
-      /*
-       * Determine the original sender.
-       */
-      const fromAddress =
-        forwarded?.fromAddress ||
-        parsed?.from?.value?.[0]?.address ||
-        req.body.from ||
-        'unknown@sender';
-
-      const fromName =
-        forwarded?.fromName ||
-        parsed?.from?.value?.[0]?.name;
-
-      /*
-       * Store the forwarded message body.
-       */
-      const bodySource =
-        forwarded?.bodyAfterHeader ||
-        bodyText;
-
-      const snippet =
-        bodySource.slice(0, 160);
-
-      const body = bodySource;
-
-      /*
-       * Create the Follow-Up task.
-       *
-       * IMPORTANT:
-       * We are NOT changing attachment storage yet.
-       * First we need to see exactly how SendGrid delivers
-       * the iPhone screenshot.
-       */
-      await Tasks.create({
-        ownerId: user.id,
-        fromAddress,
-        fromName,
-        forwarderAddress,
-        subject,
-        snippet,
-        body,
-      });
-
-      res.status(200).send('OK');
-    } catch (err) {
-      console.error(
-        'Inbound parse failed',
-        err
-      );
-
-      res
-        .status(500)
-        .send('Internal error');
+    if (!toAddress) {
+      return res
+        .status(400)
+        .send('No recognizable MailPilotus address in To');
     }
+
+    /*
+     * Find the MailPilotUs user.
+     */
+    const user =
+      await Users.findByForwardingAddress(
+        toAddress.toLowerCase()
+      );
+
+    if (!user) {
+      return res
+        .status(404)
+        .send('Unknown MailPilotus address');
+    }
+
+    /*
+     * Parse the full raw MIME email.
+     */
+    const rawEmail = req.body.email;
+
+    const parsed = rawEmail
+      ? await simpleParser(rawEmail)
+      : null;
+
+    /*
+     * DIAGNOSTIC:
+     *
+     * Apple Mail may place an attached screenshot inside
+     * the raw MIME message instead of SendGrid exposing it
+     * through req.files.
+     *
+     * We log metadata ONLY.
+     */
+    console.log(
+      'Parsed MIME attachments:',
+      (parsed?.attachments || []).map((attachment) => ({
+        filename: attachment.filename || null,
+        contentType: attachment.contentType || null,
+        size:
+          attachment.size ||
+          attachment.content?.length ||
+          0,
+        contentDisposition:
+          attachment.contentDisposition || null,
+        cid: attachment.cid || null,
+      }))
+    );
+
+    /*
+     * Also identify image attachments specifically.
+     */
+    const imageAttachments =
+      (parsed?.attachments || []).filter(
+        (attachment) =>
+          attachment.contentType &&
+          attachment.contentType.startsWith('image/')
+      );
+
+    console.log(
+      'Image attachment count:',
+      imageAttachments.length
+    );
+
+    console.log(
+      'Image attachment types:',
+      imageAttachments.map((attachment) => ({
+        filename: attachment.filename || null,
+        contentType: attachment.contentType,
+        size:
+          attachment.size ||
+          attachment.content?.length ||
+          0,
+      }))
+    );
+
+    /*
+     * Continue processing the message normally.
+     */
+    const bodyText =
+      parsed?.text ||
+      req.body.text ||
+      '';
+
+    const forwarded =
+      extractOriginalSender(bodyText);
+
+    /*
+     * Address of the person forwarding the message.
+     */
+    const forwarderAddress =
+      parsed?.from?.value?.[0]?.address ||
+      req.body.from ||
+      undefined;
+
+    /*
+     * Determine subject.
+     */
+    const rawSubject =
+      forwarded?.origSubject ||
+      parsed?.subject ||
+      req.body.subject ||
+      '(no subject)';
+
+    const subject = rawSubject.replace(
+      /^(fwd?:\s*)+/i,
+      ''
+    );
+
+    /*
+     * Determine sender.
+     */
+    const fromAddress =
+      forwarded?.fromAddress ||
+      parsed?.from?.value?.[0]?.address ||
+      req.body.from ||
+      'unknown@sender';
+
+    const fromName =
+      forwarded?.fromName ||
+      parsed?.from?.value?.[0]?.name;
+
+    /*
+     * Message body.
+     */
+    const bodySource =
+      forwarded?.bodyAfterHeader ||
+      bodyText;
+
+    const snippet =
+      bodySource.slice(0, 160);
+
+    const body = bodySource;
+
+    /*
+     * Keep existing Follow-Up creation working.
+     */
+    await Tasks.create({
+      ownerId: user.id,
+      fromAddress,
+      fromName,
+      forwarderAddress,
+      subject,
+      snippet,
+      body,
+    });
+
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error(
+      'Inbound parse failed',
+      err
+    );
+
+    res
+      .status(500)
+      .send('Internal error');
   }
-);
+});
 
 module.exports = router;
