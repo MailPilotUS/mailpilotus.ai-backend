@@ -1,66 +1,87 @@
 // MailPilotus data model.
-// Swap the datasource to Postgres in production (see /docs/deployment-guide.docx).
+
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model User {
-  id                 String   @id @default(cuid())
-  email              String   @unique
-  passwordHash       String
-  forwardingAddress  String   @unique // e.g. jane.k4f9@fly.mailpilotus.ai
-  revenueCatAppUserId String  @unique
-  subscriptionStatus String   @default("none") // none | trialing | active | expired
-  trialEndsAt        DateTime?
-resetToken       String?
-resetTokenExpiry DateTime?
-  createdAt          DateTime @default(now())
-  googleAccessToken  String? // Gmail contacts OAuth - short-lived, auto-refreshed
-  googleRefreshToken String? // Gmail contacts OAuth - long-lived, only set on first consent
-  googleTokenExpiry  DateTime?
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  passwordHash        String
+  forwardingAddress   String   @unique
+  revenueCatAppUserId String   @unique
+  subscriptionStatus  String   @default("none")
+  trialEndsAt         DateTime?
+  resetToken          String?
+  resetTokenExpiry    DateTime?
+  createdAt           DateTime @default(now())
+
+  googleAccessToken   String?
+  googleRefreshToken  String?
+  googleTokenExpiry   DateTime?
+
   tasks      Task[]
   contacts   Contact[]
   pushTokens PushToken[]
 }
+
 model Contact {
   id              String  @id @default(cuid())
   ownerId         String
   owner           User    @relation(fields: [ownerId], references: [id])
-  deviceContactId String? // legacy: local device-contact id or Google People API resourceName, for de-dupe on contacts synced from an external source. Manually-entered contacts leave this null.
+  deviceContactId String?
   name            String
   email           String?
   phone           String?
   createdAt       DateTime @default(now())
+
   assignedTasks Task[]
+
   @@unique([ownerId, deviceContactId])
 }
+
 model Task {
-  id               String    @id @default(cuid())
+  id               String   @id @default(cuid())
   ownerId          String
-  owner            User      @relation(fields: [ownerId], references: [id])
+  owner            User     @relation(fields: [ownerId], references: [id])
+
   fromAddress      String
   fromName         String?
-  forwarderAddress String? // the account holder's own address (who forwarded this email), used for "View Original" deep links
+  forwarderAddress String?
+
   subject          String
   snippet          String?
-  body             String? // full plain-text body, used when forwarding the email to an assigned contact
-  rawEmailUrl      String? // pointer to stored raw MIME, e.g. S3 key
-  status           String    @default("follow_up") // follow_up | assigned | done
+  body             String?
+
+  rawEmailUrl      String?
+
+  // Original image/screenshot forwarded into MailPilotUs.
+  // Stored as binary data so it survives Render restarts.
+  originalImage     Bytes?
+  originalImageType String?
+  originalImageName String?
+
+  status           String   @default("follow_up")
+
   assignedToId     String?
-  assignedTo       Contact?  @relation(fields: [assignedToId], references: [id])
+  assignedTo       Contact? @relation(fields: [assignedToId], references: [id])
   assignedAt       DateTime?
-  receivedAt       DateTime  @default(now())
+
+  receivedAt       DateTime @default(now())
   completedAt      DateTime?
-dueDate       DateTime?
+  dueDate           DateTime?
 }
+
 model PushToken {
   id        String   @id @default(cuid())
   ownerId   String
   owner     User     @relation(fields: [ownerId], references: [id])
-  token     String   @unique // Expo push token, e.g. ExponentPushToken[xxxxx]
-  platform  String   // ios | android | web
+  token     String   @unique
+  platform  String
   createdAt DateTime @default(now())
 }
