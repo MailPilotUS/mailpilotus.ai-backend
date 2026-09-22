@@ -89,9 +89,7 @@ function extractOriginalSender(text) {
       : undefined,
 
     fromAddress: fromAddress.trim(),
-
     origSubject,
-
     bodyAfterHeader,
   };
 }
@@ -101,26 +99,6 @@ function extractOriginalSender(text) {
  */
 router.post('/sendgrid', upload.any(), async (req, res) => {
   try {
-    console.log('=== INBOUND SENDGRID MESSAGE ===');
-
-    console.log(
-      'Body fields:',
-      Object.keys(req.body || {})
-    );
-
-    console.log(
-      'Uploaded files:',
-      (req.files || []).map((file) => ({
-        fieldname: file.fieldname,
-        originalname: file.originalname,
-        mimetype: file.mimetype,
-        size: file.size,
-      }))
-    );
-
-    /*
-     * Find the MailPilotUs forwarding address.
-     */
     const toAddress = (req.body.to || '').match(
       /[\w.+-]+@fly\.mailpilotus\.ai/i
     )?.[0];
@@ -131,13 +109,9 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
         .send('No recognizable MailPilotus address in To');
     }
 
-    /*
-     * Find the MailPilotUs user.
-     */
-    const user =
-      await Users.findByForwardingAddress(
-        toAddress.toLowerCase()
-      );
+    const user = await Users.findByForwardingAddress(
+      toAddress.toLowerCase()
+    );
 
     if (!user) {
       return res
@@ -146,7 +120,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
     }
 
     /*
-     * Parse the full raw MIME email.
+     * Parse the complete raw MIME email.
      */
     const rawEmail = req.body.email;
 
@@ -155,58 +129,31 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       : null;
 
     /*
-     * DIAGNOSTIC:
+     * Look for an image attachment.
      *
-     * Apple Mail may place an attached screenshot inside
-     * the raw MIME message instead of SendGrid exposing it
-     * through req.files.
-     *
-     * We log metadata ONLY.
+     * Our iPhone test confirmed that the forwarded
+     * screenshot appears here as image/png.
      */
-    console.log(
-      'Parsed MIME attachments:',
-      (parsed?.attachments || []).map((attachment) => ({
-        filename: attachment.filename || null,
-        contentType: attachment.contentType || null,
-        size:
-          attachment.size ||
-          attachment.content?.length ||
-          0,
-        contentDisposition:
-          attachment.contentDisposition || null,
-        cid: attachment.cid || null,
-      }))
-    );
-
-    /*
-     * Also identify image attachments specifically.
-     */
-    const imageAttachments =
-      (parsed?.attachments || []).filter(
+    const imageAttachment =
+      (parsed?.attachments || []).find(
         (attachment) =>
           attachment.contentType &&
-          attachment.contentType.startsWith('image/')
-      );
+          attachment.contentType.startsWith('image/') &&
+          attachment.content
+      ) || null;
 
-    console.log(
-      'Image attachment count:',
-      imageAttachments.length
-    );
-
-    console.log(
-      'Image attachment types:',
-      imageAttachments.map((attachment) => ({
-        filename: attachment.filename || null,
-        contentType: attachment.contentType,
+    if (imageAttachment) {
+      console.log('Inbound screenshot detected:', {
+        filename: imageAttachment.filename || null,
+        contentType: imageAttachment.contentType,
         size:
-          attachment.size ||
-          attachment.content?.length ||
-          0,
-      }))
-    );
+          imageAttachment.size ||
+          imageAttachment.content.length,
+      });
+    }
 
     /*
-     * Continue processing the message normally.
+     * Get the plain-text portion of the message.
      */
     const bodyText =
       parsed?.text ||
@@ -217,7 +164,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       extractOriginalSender(bodyText);
 
     /*
-     * Address of the person forwarding the message.
+     * Address of the person who forwarded the message.
      */
     const forwarderAddress =
       parsed?.from?.value?.[0]?.address ||
@@ -264,7 +211,10 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
     const body = bodySource;
 
     /*
-     * Keep existing Follow-Up creation working.
+     * Create the Follow-Up.
+     *
+     * If an image was attached, save the actual binary
+     * screenshot plus its type and filename.
      */
     await Tasks.create({
       ownerId: user.id,
@@ -274,6 +224,15 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       subject,
       snippet,
       body,
+
+      originalImage:
+        imageAttachment?.content || null,
+
+      originalImageType:
+        imageAttachment?.contentType || null,
+
+      originalImageName:
+        imageAttachment?.filename || null,
     });
 
     res.status(200).send('OK');
