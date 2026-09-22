@@ -2,18 +2,31 @@
  * Postgres-backed data store via Prisma Client.
  * Replaces the in-memory store so data survives Render restarts.
  */
+
 const { PrismaClient } = require('@prisma/client');
 const { nanoid } = require('nanoid');
+
 const prisma = new PrismaClient();
+
 function makeForwardingAddress(email) {
-  const local = email.split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const local = email
+    .split('@')[0]
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase();
+
   const suffix = nanoid(4).toLowerCase();
+
   return `${local}.${suffix}@fly.mailpilotus.ai`;
 }
+
+/*
+ * USERS
+ */
 const Users = {
   async create({ email, passwordHash }) {
     const id = nanoid();
     const forwardingAddress = makeForwardingAddress(email);
+
     return prisma.user.create({
       data: {
         id,
@@ -25,79 +38,198 @@ const Users = {
       },
     });
   },
+
   async findByEmail(email) {
-    return prisma.user.findUnique({ where: { email } });
+    return prisma.user.findUnique({
+      where: { email },
+    });
   },
+
   async findById(id) {
-    return prisma.user.findUnique({ where: { id } });
+    return prisma.user.findUnique({
+      where: { id },
+    });
   },
+
   async findByForwardingAddress(address) {
-    return prisma.user.findUnique({ where: { forwardingAddress: address.toLowerCase() } });
+    return prisma.user.findUnique({
+      where: {
+        forwardingAddress: address.toLowerCase(),
+      },
+    });
   },
+
   async updateSubscription(id, { status, trialEndsAt }) {
     return prisma.user.update({
       where: { id },
       data: {
         subscriptionStatus: status,
+
         ...(trialEndsAt !== undefined
-          ? { trialEndsAt: trialEndsAt ? new Date(trialEndsAt) : null }
+          ? {
+              trialEndsAt: trialEndsAt
+                ? new Date(trialEndsAt)
+                : null,
+            }
           : {}),
       },
     });
   },
-  async saveGoogleTokens(id, { googleAccessToken, googleRefreshToken, googleTokenExpiry }) {
+
+  async saveGoogleTokens(
+    id,
+    {
+      googleAccessToken,
+      googleRefreshToken,
+      googleTokenExpiry,
+    }
+  ) {
     return prisma.user.update({
       where: { id },
+
       data: {
         googleAccessToken,
-        ...(googleRefreshToken ? { googleRefreshToken } : {}),
+
+        ...(googleRefreshToken
+          ? { googleRefreshToken }
+          : {}),
+
         googleTokenExpiry,
       },
     });
   },
-  async setResetToken(id, { resetToken, resetTokenExpiry }) {
+
+  async setResetToken(
+    id,
+    {
+      resetToken,
+      resetTokenExpiry,
+    }
+  ) {
     return prisma.user.update({
       where: { id },
-      data: { resetToken, resetTokenExpiry },
+
+      data: {
+        resetToken,
+        resetTokenExpiry,
+      },
     });
   },
+
   async findByResetToken(token) {
     return prisma.user.findFirst({
-      where: { resetToken: token, resetTokenExpiry: { gt: new Date() } },
+      where: {
+        resetToken: token,
+
+        resetTokenExpiry: {
+          gt: new Date(),
+        },
+      },
     });
   },
+
   async resetPassword(id, passwordHash) {
     return prisma.user.update({
       where: { id },
-      data: { passwordHash, resetToken: null, resetTokenExpiry: null },
+
+      data: {
+        passwordHash,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
     });
   },
 };
+
+/*
+ * CONTACTS
+ */
 const Contacts = {
-  async upsert({ ownerId, deviceContactId, name, email, phone }) {
+  async upsert({
+    ownerId,
+    deviceContactId,
+    name,
+    email,
+    phone,
+  }) {
     return prisma.contact.upsert({
-      where: { ownerId_deviceContactId: { ownerId, deviceContactId } },
-      update: { name, email, phone },
-      create: { ownerId, deviceContactId, name, email, phone },
+      where: {
+        ownerId_deviceContactId: {
+          ownerId,
+          deviceContactId,
+        },
+      },
+
+      update: {
+        name,
+        email,
+        phone,
+      },
+
+      create: {
+        ownerId,
+        deviceContactId,
+        name,
+        email,
+        phone,
+      },
     });
   },
-  async create({ ownerId, name, email, phone }) {
+
+  async create({
+    ownerId,
+    name,
+    email,
+    phone,
+  }) {
     return prisma.contact.create({
-      data: { ownerId, name, email, phone },
+      data: {
+        ownerId,
+        name,
+        email,
+        phone,
+      },
     });
   },
+
   async findAllByOwner(ownerId) {
     return prisma.contact.findMany({
       where: { ownerId },
-      orderBy: { name: 'asc' },
+
+      orderBy: {
+        name: 'asc',
+      },
     });
   },
+
   async findById(id) {
-    return prisma.contact.findUnique({ where: { id } });
+    return prisma.contact.findUnique({
+      where: { id },
+    });
   },
 };
+
+/*
+ * TASKS
+ */
 const Tasks = {
-  async create({ ownerId, fromAddress, fromName, forwarderAddress, subject, snippet, body }) {
+  /*
+   * Creates normal email Follow-Ups AND forwarded
+   * screenshot Follow-Ups.
+   */
+  async create({
+    ownerId,
+    fromAddress,
+    fromName,
+    forwarderAddress,
+    subject,
+    snippet,
+    body,
+
+    originalImage,
+    originalImageType,
+    originalImageName,
+  }) {
     return prisma.task.create({
       data: {
         ownerId,
@@ -107,76 +239,197 @@ const Tasks = {
         subject,
         snippet,
         body,
+
+        /*
+         * These will be null for ordinary emails.
+         * For a forwarded screenshot they contain the
+         * actual image and its metadata.
+         */
+        originalImage:
+          originalImage || null,
+
+        originalImageType:
+          originalImageType || null,
+
+        originalImageName:
+          originalImageName || null,
+
         status: 'follow_up',
       },
     });
   },
+
   async listByOwnerAndStatus(ownerId, status) {
     return prisma.task.findMany({
-      where: { ownerId, status },
-      orderBy: { receivedAt: 'desc' },
+      where: {
+        ownerId,
+        status,
+      },
+
+      orderBy: {
+        receivedAt: 'desc',
+      },
     });
   },
+
   async findById(id) {
-    return prisma.task.findUnique({ where: { id } });
+    return prisma.task.findUnique({
+      where: { id },
+    });
   },
+
   async assign(id, contactId) {
     return prisma.task.update({
       where: { id },
-      data: { status: 'assigned', assignedToId: contactId, assignedAt: new Date() },
+
+      data: {
+        status: 'assigned',
+        assignedToId: contactId,
+        assignedAt: new Date(),
+      },
     });
   },
+
   async unassign(id) {
     return prisma.task.update({
       where: { id },
-      data: { status: 'follow_up', assignedToId: null, assignedAt: null },
+
+      data: {
+        status: 'follow_up',
+        assignedToId: null,
+        assignedAt: null,
+      },
     });
   },
+
   async complete(id) {
     return prisma.task.update({
       where: { id },
-      data: { status: 'done', completedAt: new Date() },
+
+      data: {
+        status: 'done',
+        completedAt: new Date(),
+      },
     });
   },
+
   async setDueDate(id, dueDate) {
     return prisma.task.update({
       where: { id },
-      data: { dueDate: dueDate ? new Date(dueDate) : null },
+
+      data: {
+        dueDate: dueDate
+          ? new Date(dueDate)
+          : null,
+      },
     });
   },
+
   async serialize(task) {
-    const contact = task.assignedToId ? await Contacts.findById(task.assignedToId) : null;
+    const contact = task.assignedToId
+      ? await Contacts.findById(task.assignedToId)
+      : null;
+
     return {
       id: task.id,
-      fromAddress: task.fromAddress,
-      fromName: task.fromName,
-      forwarderAddress: task.forwarderAddress,
-      subject: task.subject,
-      snippet: task.snippet,
-      receivedAt: task.receivedAt,
-      status: task.status,
-      assignedTo: contact ? { id: contact.id, name: contact.name, email: contact.email } : null,
-      assignedAt: task.assignedAt,
+
+      fromAddress:
+        task.fromAddress,
+
+      fromName:
+        task.fromName,
+
+      forwarderAddress:
+        task.forwarderAddress,
+
+      subject:
+        task.subject,
+
+      snippet:
+        task.snippet,
+
+      receivedAt:
+        task.receivedAt,
+
+      status:
+        task.status,
+
+      assignedTo: contact
+        ? {
+            id: contact.id,
+            name: contact.name,
+            email: contact.email,
+          }
+        : null,
+
+      assignedAt:
+        task.assignedAt,
+
       assignedByMe: true,
-      dueDate: task.dueDate,
+
+      dueDate:
+        task.dueDate,
+
+      /*
+       * Tell the app whether this Follow-Up
+       * contains an original screenshot.
+       *
+       * We deliberately DO NOT send the binary
+       * image in every Follow-Up list response.
+       */
+      hasOriginalImage:
+        Boolean(task.originalImage),
+
+      originalImageType:
+        task.originalImageType,
+
+      originalImageName:
+        task.originalImageName,
     };
   },
 };
+
+/*
+ * PUSH TOKENS
+ */
 const PushTokens = {
-  // Upserts on the token itself (not ownerId) so re-installs, account
-  // switches on the same device, etc. don't create duplicate rows.
-  async upsert({ ownerId, token, platform }) {
+  async upsert({
+    ownerId,
+    token,
+    platform,
+  }) {
     return prisma.pushToken.upsert({
       where: { token },
-      update: { ownerId, platform },
-      create: { ownerId, token, platform },
+
+      update: {
+        ownerId,
+        platform,
+      },
+
+      create: {
+        ownerId,
+        token,
+        platform,
+      },
     });
   },
+
   async findAllByOwner(ownerId) {
-    return prisma.pushToken.findMany({ where: { ownerId } });
+    return prisma.pushToken.findMany({
+      where: { ownerId },
+    });
   },
+
   async remove(token) {
-    return prisma.pushToken.deleteMany({ where: { token } });
+    return prisma.pushToken.deleteMany({
+      where: { token },
+    });
   },
 };
-module.exports = { Users, Contacts, Tasks, PushTokens };
+
+module.exports = {
+  Users,
+  Contacts,
+  Tasks,
+  PushTokens,
+};
