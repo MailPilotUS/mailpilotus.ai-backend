@@ -31,9 +31,9 @@ model User {
 }
 
 model Contact {
-  id              String  @id @default(cuid())
+  id              String   @id @default(cuid())
   ownerId         String
-  owner           User    @relation(fields: [ownerId], references: [id])
+  owner           User     @relation(fields: [ownerId], references: [id])
   deviceContactId String?
   name            String
   email           String?
@@ -58,6 +58,10 @@ model Task {
   snippet          String?
   body             String?
 
+  // Identifies where the Follow-Up originated.
+  // email | text | reminder
+  sourceType       String   @default("email")
+
   rawEmailUrl      String?
 
   // Original image/screenshot forwarded into MailPilotUs.
@@ -74,7 +78,7 @@ model Task {
 
   receivedAt       DateTime @default(now())
   completedAt      DateTime?
-  dueDate           DateTime?
+  dueDate          DateTime?
 }
 
 model PushToken {
