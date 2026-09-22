@@ -214,8 +214,10 @@ const Contacts = {
  */
 const Tasks = {
   /*
-   * Creates normal email Follow-Ups AND forwarded
-   * screenshot Follow-Ups.
+   * Creates normal email Follow-Ups,
+   * copied text Follow-Ups,
+   * standalone reminders,
+   * and forwarded screenshot Follow-Ups.
    */
   async create({
     ownerId,
@@ -225,6 +227,7 @@ const Tasks = {
     subject,
     snippet,
     body,
+    sourceType,
 
     originalImage,
     originalImageType,
@@ -241,9 +244,8 @@ const Tasks = {
         body,
 
         /*
-         * These will be null for ordinary emails.
-         * For a forwarded screenshot they contain the
-         * actual image and its metadata.
+         * These will be null for ordinary emails,
+         * texts and reminders.
          */
         originalImage:
           originalImage || null,
@@ -253,6 +255,14 @@ const Tasks = {
 
         originalImageName:
           originalImageName || null,
+
+        /*
+         * Save source type when the Prisma schema
+         * supports it.
+         */
+        ...(sourceType
+          ? { sourceType }
+          : {}),
 
         status: 'follow_up',
       },
@@ -274,6 +284,42 @@ const Tasks = {
 
   async findById(id) {
     return prisma.task.findUnique({
+      where: { id },
+    });
+  },
+
+  /*
+   * Edit an existing standalone reminder.
+   */
+  async updateReminder(
+    id,
+    title,
+    entity,
+    dueDate
+  ) {
+    return prisma.task.update({
+      where: { id },
+
+      data: {
+        subject: title,
+        fromName:
+          entity || 'Standalone Reminder',
+        snippet:
+          entity || '',
+        body: title,
+        dueDate:
+          dueDate
+            ? new Date(dueDate)
+            : null,
+      },
+    });
+  },
+
+  /*
+   * Delete a task/reminder permanently.
+   */
+  async delete(id) {
+    return prisma.task.delete({
       where: { id },
     });
   },
@@ -330,6 +376,29 @@ const Tasks = {
       ? await Contacts.findById(task.assignedToId)
       : null;
 
+    /*
+     * Determine the source type.
+     *
+     * Existing records may not have sourceType,
+     * so preserve compatibility with older data.
+     */
+    let sourceType =
+      task.sourceType || 'email';
+
+    if (
+      !task.sourceType &&
+      task.fromName === 'Standalone Reminder'
+    ) {
+      sourceType = 'reminder';
+    }
+
+    if (
+      !task.sourceType &&
+      task.fromName === 'Text Message'
+    ) {
+      sourceType = 'text';
+    }
+
     return {
       id: task.id,
 
@@ -370,12 +439,25 @@ const Tasks = {
       dueDate:
         task.dueDate,
 
+      sourceType,
+
       /*
-       * Tell the app whether this Follow-Up
-       * contains an original screenshot.
-       *
-       * We deliberately DO NOT send the binary
-       * image in every Follow-Up list response.
+       * For reminders, the entity is stored
+       * in fromName/snippet.
+       */
+      entity:
+        sourceType === 'reminder'
+          ? (
+              task.fromName === 'Standalone Reminder'
+                ? ''
+                : task.fromName
+            )
+          : null,
+
+      /*
+       * Screenshot information.
+       * Do NOT send the actual binary image
+       * in the Follow-Up list.
        */
       hasOriginalImage:
         Boolean(task.originalImage),
