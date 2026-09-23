@@ -1,9 +1,11 @@
 const express = require('express');
 const multer = require('multer');
 const { simpleParser } = require('mailparser');
-const { Users, Tasks } = require('../store');
+const { Expo } = require('expo-server-sdk');
+const { Users, Tasks, PushTokens } = require('../store');
 
 const router = express.Router();
+const expo = new Expo();
 
 const upload = multer({
   limits: {
@@ -92,6 +94,94 @@ function extractOriginalSender(text) {
     origSubject,
     bodyAfterHeader,
   };
+}
+
+/**
+ * Send a push notification to all registered devices
+ * belonging to a MailPilotUs user.
+ *
+ * Push failures NEVER prevent the Follow-Up from being created.
+ */
+async function sendNewFollowUpNotification(
+  ownerId,
+  taskId,
+  subject,
+  fromName
+) {
+  try {
+    const tokens = await PushTokens.findAllByOwner(ownerId);
+
+    if (!tokens || tokens.length === 0) {
+      console.log(
+        'No registered push devices for user:',
+        ownerId
+      );
+      return;
+    }
+
+    const validTokens = tokens.filter((record) =>
+      Expo.isExpoPushToken(record.token)
+    );
+
+    if (validTokens.length === 0) {
+      console.log(
+        'No valid Expo push tokens for user:',
+        ownerId
+      );
+      return;
+    }
+
+    const cleanSubject =
+      subject && subject !== '(no subject)'
+        ? subject
+        : 'New Follow-Up';
+
+    const sender =
+      fromName && fromName.trim()
+        ? fromName.trim()
+        : null;
+
+    const notificationBody = sender
+      ? `${sender}: ${cleanSubject}`
+      : cleanSubject;
+
+    const messages = validTokens.map((record) => ({
+      to: record.token,
+      sound: 'default',
+      title: 'MailPilotUs',
+      body: notificationBody,
+
+      data: {
+        screen: 'FollowUp',
+        taskId,
+      },
+    }));
+
+    const chunks =
+      expo.chunkPushNotifications(messages);
+
+    for (const chunk of chunks) {
+      try {
+        const tickets =
+          await expo.sendPushNotificationsAsync(chunk);
+
+        console.log(
+          'New Follow-Up push sent:',
+          tickets
+        );
+      } catch (err) {
+        console.error(
+          'Error sending Follow-Up push chunk:',
+          err
+        );
+      }
+    }
+  } catch (err) {
+    console.error(
+      'New Follow-Up notification failed:',
+      err
+    );
+  }
 }
 
 /**
@@ -216,7 +306,7 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
      * If an image was attached, save the actual binary
      * screenshot plus its type and filename.
      */
-    await Tasks.create({
+    const createdTask = await Tasks.create({
       ownerId: user.id,
       fromAddress,
       fromName,
@@ -224,6 +314,8 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
       subject,
       snippet,
       body,
+
+      sourceType: 'email',
 
       originalImage:
         imageAttachment?.content || null,
@@ -235,16 +327,41 @@ router.post('/sendgrid', upload.any(), async (req, res) => {
         imageAttachment?.filename || null,
     });
 
+    /*
+     * Immediately acknowledge SendGrid.
+     *
+     * The Follow-Up is safely stored at this point.
+     */
     res.status(200).send('OK');
+
+    /*
+     * Now send the user's push notification.
+     *
+     * A push failure cannot undo or interfere with
+     * the Follow-Up that was just created.
+     */
+    sendNewFollowUpNotification(
+      user.id,
+      createdTask.id,
+      subject,
+      fromName
+    ).catch((err) => {
+      console.error(
+        'Background Follow-Up notification error:',
+        err
+      );
+    });
   } catch (err) {
     console.error(
       'Inbound parse failed',
       err
     );
 
-    res
-      .status(500)
-      .send('Internal error');
+    if (!res.headersSent) {
+      res
+        .status(500)
+        .send('Internal error');
+    }
   }
 });
 
