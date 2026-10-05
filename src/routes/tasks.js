@@ -1,12 +1,12 @@
 const express = require('express');
-const sgMail = require('@sendgrid/mail');
+const { Resend } = require('resend');
 const { Tasks, Contacts } = require('../store');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // GET /v1/tasks?status=follow_up|assigned|done
 router.get('/', async (req, res) => {
@@ -271,10 +271,9 @@ router.post('/:id/assign', async (req, res) => {
         : task.fromAddress;
 
       try {
-        await sgMail.send({
-          to: contact.email,
-          from: 'support@mailpilotus.com',
-          replyTo: task.forwarderAddress || undefined,
+        const emailData = {
+          from: 'MailPilotUS <support@mailpilotus.com>',
+          to: [contact.email],
 
           subject: `Fwd: ${task.subject} (from ${
             task.fromName || task.fromAddress
@@ -295,7 +294,24 @@ router.post('/:id/assign', async (req, res) => {
               )}
             </div>
           `,
-        });
+        };
+
+        if (task.forwarderAddress) {
+          emailData.replyTo = task.forwarderAddress;
+        }
+
+        const { data, error } = await resend.emails.send(emailData);
+
+        if (error) {
+          throw new Error(
+            error.message || 'Resend failed to send assignment email'
+          );
+        }
+
+        console.log(
+          'Assignment notification sent with Resend:',
+          data?.id
+        );
       } catch (err) {
         console.error(
           'Failed to send assign notification email:',
