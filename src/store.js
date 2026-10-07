@@ -371,6 +371,75 @@ const Tasks = {
     });
   },
 
+  /*
+   * Mark an email Follow-Up as Waiting for Reply.
+   */
+  async waitForReply(id, replyDeadline) {
+    return prisma.task.update({
+      where: { id },
+
+      data: {
+        waitingForReply: true,
+
+        replyDeadline: replyDeadline
+          ? new Date(replyDeadline)
+          : null,
+
+        replyReceivedAt: null,
+      },
+    });
+  },
+
+  /*
+   * Mark that the expected reply has arrived.
+   */
+  async markReplyReceived(id) {
+    return prisma.task.update({
+      where: { id },
+
+      data: {
+        waitingForReply: false,
+        replyReceivedAt: new Date(),
+      },
+    });
+  },
+
+  /*
+   * Cancel Waiting for Reply tracking.
+   */
+  async cancelWaitingForReply(id) {
+    return prisma.task.update({
+      where: { id },
+
+      data: {
+        waitingForReply: false,
+        replyDeadline: null,
+        replyReceivedAt: null,
+      },
+    });
+  },
+
+  /*
+   * Find active Waiting-for-Reply tasks for an owner.
+   *
+   * This will later be used by inbound email processing
+   * to determine whether an incoming email satisfies
+   * an expected reply.
+   */
+  async findWaitingForReply(ownerId) {
+    return prisma.task.findMany({
+      where: {
+        ownerId,
+        waitingForReply: true,
+        status: 'follow_up',
+      },
+
+      orderBy: {
+        replyDeadline: 'asc',
+      },
+    });
+  },
+
   async serialize(task) {
     const contact = task.assignedToId
       ? await Contacts.findById(task.assignedToId)
@@ -440,6 +509,32 @@ const Tasks = {
         task.dueDate,
 
       sourceType,
+
+      /*
+       * Waiting for Reply information.
+       */
+      waitingForReply:
+        Boolean(task.waitingForReply),
+
+      replyDeadline:
+        task.replyDeadline,
+
+      replyReceivedAt:
+        task.replyReceivedAt,
+
+      /*
+       * Convenient state for the app.
+       *
+       * noReply becomes true once the deadline
+       * passes without a reply.
+       */
+      noReply:
+        Boolean(
+          task.waitingForReply &&
+          task.replyDeadline &&
+          !task.replyReceivedAt &&
+          new Date(task.replyDeadline).getTime() <= Date.now()
+        ),
 
       /*
        * For reminders, the entity is stored
