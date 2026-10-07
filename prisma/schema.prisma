@@ -79,6 +79,11 @@ model Task {
   receivedAt       DateTime @default(now())
   completedAt      DateTime?
   dueDate          DateTime?
+
+  // Waiting for Reply / No Reply tracking
+  waitingForReply  Boolean  @default(false)
+  replyDeadline    DateTime?
+  replyReceivedAt  DateTime?
 }
 
 model PushToken {
