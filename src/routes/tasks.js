@@ -79,7 +79,6 @@ router.post('/reminder', async (req, res) => {
       snippet: entity,
       body: title,
       sourceType: 'reminder',
-      dueDate,
     });
 
     let updated = task;
@@ -152,6 +151,156 @@ router.patch('/:id/reminder', async (req, res) => {
     return res.status(500).json({
       error: 'Could not update reminder',
       detail: err.message,
+    });
+  }
+});
+
+/*
+ * POST /v1/tasks/:id/waiting-for-reply
+ *
+ * Start Waiting for Reply tracking.
+ *
+ * Body:
+ * {
+ *   replyDeadline: ISO date string
+ * }
+ */
+router.post('/:id/waiting-for-reply', async (req, res) => {
+  try {
+    const task = await Tasks.findById(req.params.id);
+
+    if (!task || task.ownerId !== req.userId) {
+      return res.status(404).json({
+        error: 'Not found',
+      });
+    }
+
+    if (
+      task.sourceType === 'text' ||
+      task.sourceType === 'reminder'
+    ) {
+      return res.status(400).json({
+        error: 'Waiting for Reply is only available for email follow-ups',
+      });
+    }
+
+    const replyDeadline = req.body?.replyDeadline;
+
+    if (!replyDeadline) {
+      return res.status(400).json({
+        error: 'Reply deadline is required',
+      });
+    }
+
+    const deadline = new Date(replyDeadline);
+
+    if (Number.isNaN(deadline.getTime())) {
+      return res.status(400).json({
+        error: 'Invalid reply deadline',
+      });
+    }
+
+    if (deadline.getTime() <= Date.now()) {
+      return res.status(400).json({
+        error: 'Reply deadline must be in the future',
+      });
+    }
+
+    const updated = await Tasks.waitForReply(
+      task.id,
+      deadline.toISOString()
+    );
+
+    return res.json(
+      await Tasks.serialize(updated)
+    );
+  } catch (err) {
+    console.error(
+      'Start Waiting for Reply failed:',
+      err
+    );
+
+    return res.status(500).json({
+      error: 'Could not start Waiting for Reply',
+    });
+  }
+});
+
+/*
+ * POST /v1/tasks/:id/cancel-waiting-for-reply
+ *
+ * Stop Waiting for Reply tracking.
+ */
+router.post(
+  '/:id/cancel-waiting-for-reply',
+  async (req, res) => {
+    try {
+      const task = await Tasks.findById(req.params.id);
+
+      if (!task || task.ownerId !== req.userId) {
+        return res.status(404).json({
+          error: 'Not found',
+        });
+      }
+
+      const updated =
+        await Tasks.cancelWaitingForReply(task.id);
+
+      return res.json(
+        await Tasks.serialize(updated)
+      );
+    } catch (err) {
+      console.error(
+        'Cancel Waiting for Reply failed:',
+        err
+      );
+
+      return res.status(500).json({
+        error: 'Could not cancel Waiting for Reply',
+      });
+    }
+  }
+);
+
+/*
+ * POST /v1/tasks/:id/reply-received
+ *
+ * Mark the expected reply as received.
+ *
+ * This endpoint also gives us a safe manual action
+ * while automatic inbound reply detection is being
+ * connected.
+ */
+router.post('/:id/reply-received', async (req, res) => {
+  try {
+    const task = await Tasks.findById(req.params.id);
+
+    if (!task || task.ownerId !== req.userId) {
+      return res.status(404).json({
+        error: 'Not found',
+      });
+    }
+
+    if (!task.waitingForReply) {
+      return res.status(400).json({
+        error: 'This task is not waiting for a reply',
+      });
+    }
+
+    const updated =
+      await Tasks.markReplyReceived(task.id);
+
+    return res.json(
+      await Tasks.serialize(updated)
+    );
+  } catch (err) {
+    console.error(
+      'Mark Reply Received failed:',
+      err
+    );
+
+    return res.status(500).json({
+      error: 'Could not mark reply as received',
     });
   }
 });
@@ -300,11 +449,13 @@ router.post('/:id/assign', async (req, res) => {
           emailData.replyTo = task.forwarderAddress;
         }
 
-        const { data, error } = await resend.emails.send(emailData);
+        const { data, error } =
+          await resend.emails.send(emailData);
 
         if (error) {
           throw new Error(
-            error.message || 'Resend failed to send assignment email'
+            error.message ||
+              'Resend failed to send assignment email'
           );
         }
 
